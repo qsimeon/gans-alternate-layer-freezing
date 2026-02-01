@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 import time
 import numpy as np
+from tqdm import tqdm
 
 
 def evaluate_model(model, test_loader, device='cpu'):
@@ -41,7 +42,7 @@ def evaluate_model(model, test_loader, device='cpu'):
 
 
 def train_standard(model, train_loader, test_loader, num_epochs=10, 
-                   learning_rate=0.001, device='cpu'):
+                   learning_rate=0.001, device='cpu', verbose=True):
     """Train model using standard approach (update all parameters at each step).
     
     Args:
@@ -51,6 +52,7 @@ def train_standard(model, train_loader, test_loader, num_epochs=10,
         num_epochs (int): Number of training epochs
         learning_rate (float): Learning rate for optimizer
         device (str): Device to run training on ('cpu' or 'cuda')
+        verbose (bool): Whether to print progress
         
     Returns:
         tuple: (losses, accuracies, training_time)
@@ -69,7 +71,10 @@ def train_standard(model, train_loader, test_loader, num_epochs=10,
     
     start_time = time.time()
     
-    for epoch in range(num_epochs):
+    epoch_iterator = tqdm(range(num_epochs), desc='   Standard', 
+                         disable=not verbose, leave=True)
+    
+    for epoch in epoch_iterator:
         model.train()
         epoch_loss = 0.0
         num_batches = 0
@@ -99,15 +104,23 @@ def train_standard(model, train_loader, test_loader, num_epochs=10,
         accuracy = evaluate_model(model, test_loader, device)
         accuracies.append(accuracy)
         
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
+        # Update progress bar
+        epoch_iterator.set_postfix({
+            'loss': f'{avg_loss:.4f}',
+            'acc': f'{accuracy:.1f}%'
+        })
     
     training_time = time.time() - start_time
+    
+    if verbose:
+        print(f'   ✓ Completed in {training_time:.2f}s | Final Acc: {accuracies[-1]:.2f}%')
     
     return losses, accuracies, training_time
 
 
 def train_alternating(model, train_loader, test_loader, num_epochs=10,
-                     learning_rate=0.001, device='cpu', switch_frequency=1):
+                     learning_rate=0.001, device='cpu', switch_frequency=1,
+                     verbose=True):
     """Train model using alternating approach (freeze one half while updating the other).
     
     Args:
@@ -118,6 +131,7 @@ def train_alternating(model, train_loader, test_loader, num_epochs=10,
         learning_rate (float): Learning rate for optimizer
         device (str): Device to run training on ('cpu' or 'cuda')
         switch_frequency (int): How often to switch between halves (in epochs)
+        verbose (bool): Whether to print progress
         
     Returns:
         tuple: (losses, accuracies, training_time)
@@ -129,14 +143,16 @@ def train_alternating(model, train_loader, test_loader, num_epochs=10,
     model.unfreeze_all()  # Start with all parameters trainable
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     losses = []
     accuracies = []
     
     start_time = time.time()
     
-    for epoch in range(num_epochs):
+    epoch_iterator = tqdm(range(num_epochs), desc='   Alt-Epoch', 
+                         disable=not verbose, leave=True)
+    
+    for epoch in epoch_iterator:
         model.train()
         
         # Determine which half to train based on epoch
@@ -147,10 +163,12 @@ def train_alternating(model, train_loader, test_loader, num_epochs=10,
             # Train first half, freeze second half
             model.unfreeze_first_half()
             model.freeze_second_half()
+            half_name = "1st"
         else:
             # Train second half, freeze first half
             model.freeze_first_half()
             model.unfreeze_second_half()
+            half_name = "2nd"
         
         # Recreate optimizer with only trainable parameters
         trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -184,19 +202,26 @@ def train_alternating(model, train_loader, test_loader, num_epochs=10,
         accuracy = evaluate_model(model, test_loader, device)
         accuracies.append(accuracy)
         
-        half_name = "first half" if train_first_half else "second half"
-        print(f'Epoch [{epoch+1}/{num_epochs}] ({half_name}), Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
+        # Update progress bar
+        epoch_iterator.set_postfix({
+            'half': half_name,
+            'loss': f'{avg_loss:.4f}',
+            'acc': f'{accuracy:.1f}%'
+        })
     
     training_time = time.time() - start_time
     
     # Unfreeze all parameters at the end
     model.unfreeze_all()
     
+    if verbose:
+        print(f'   ✓ Completed in {training_time:.2f}s | Final Acc: {accuracies[-1]:.2f}%')
+    
     return losses, accuracies, training_time
 
 
 def train_alternating_batch(model, train_loader, test_loader, num_epochs=10,
-                           learning_rate=0.001, device='cpu'):
+                           learning_rate=0.001, device='cpu', verbose=True):
     """Train model using batch-level alternating (switch every batch instead of every epoch).
     
     Args:
@@ -206,6 +231,7 @@ def train_alternating_batch(model, train_loader, test_loader, num_epochs=10,
         num_epochs (int): Number of training epochs
         learning_rate (float): Learning rate for optimizer
         device (str): Device to run training on ('cpu' or 'cuda')
+        verbose (bool): Whether to print progress
         
     Returns:
         tuple: (losses, accuracies, training_time)
@@ -223,7 +249,10 @@ def train_alternating_batch(model, train_loader, test_loader, num_epochs=10,
     
     start_time = time.time()
     
-    for epoch in range(num_epochs):
+    epoch_iterator = tqdm(range(num_epochs), desc='   Alt-Batch', 
+                         disable=not verbose, leave=True)
+    
+    for epoch in epoch_iterator:
         model.train()
         epoch_loss = 0.0
         num_batches = 0
@@ -267,11 +296,18 @@ def train_alternating_batch(model, train_loader, test_loader, num_epochs=10,
         accuracy = evaluate_model(model, test_loader, device)
         accuracies.append(accuracy)
         
-        print(f'Epoch [{epoch+1}/{num_epochs}] (batch-alternating), Loss: {avg_loss:.4f}, Accuracy: {accuracy:.2f}%')
+        # Update progress bar
+        epoch_iterator.set_postfix({
+            'loss': f'{avg_loss:.4f}',
+            'acc': f'{accuracy:.1f}%'
+        })
     
     training_time = time.time() - start_time
     
     # Unfreeze all parameters at the end
     model.unfreeze_all()
+    
+    if verbose:
+        print(f'   ✓ Completed in {training_time:.2f}s | Final Acc: {accuracies[-1]:.2f}%')
     
     return losses, accuracies, training_time
